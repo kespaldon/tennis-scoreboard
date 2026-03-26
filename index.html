@@ -39,6 +39,7 @@
       margin-bottom: 24px;
     }
 
+    /* Standard mode grid (set via --past-sets CSS var) */
     .score-header {
       display: grid;
       grid-template-columns: 1fr repeat(var(--past-sets), 52px) 52px 96px;
@@ -58,6 +59,12 @@
       border-top: 1px solid #1c3a1c;
       transition: background 0.15s;
       min-height: 64px;
+    }
+
+    /* Sprint mode grid override */
+    .scoreboard.sprint .score-header,
+    .scoreboard.sprint .score-row {
+      grid-template-columns: 1fr 130px;
     }
 
     .score-row.serving { background: #122412; }
@@ -118,7 +125,7 @@
       color: #c8e6c9;
     }
 
-    /* ── Prominent game-point score ─────────────── */
+    /* ── Standard mode: game-point score ────────── */
     .point-score {
       text-align: center;
       font-size: 2.4rem;
@@ -129,6 +136,20 @@
     }
 
     .point-score.advantage { color: #69f0ae; }
+
+    /* ── Sprint mode: running score ─────────────── */
+    .sprint-score {
+      text-align: center;
+      font-size: 3.2rem;
+      font-weight: 900;
+      color: #4a7a4a;
+      letter-spacing: -0.03em;
+      border-left: 1px solid #2e5c2e;
+      transition: color 0.2s;
+    }
+
+    .sprint-score.leading { color: #fff9c4; }
+    .sprint-score.winning { color: #69f0ae; }
 
     /* ── Status bar ─────────────────────────────── */
     .status {
@@ -161,7 +182,7 @@
       line-height: 1.4;
     }
 
-    .point-btn:active  { transform: scale(0.97); filter: brightness(0.9); }
+    .point-btn:active   { transform: scale(0.97); filter: brightness(0.9); }
     .point-btn:disabled { opacity: 0.35; cursor: default; }
 
     .point-btn.p1 { background: #2e7d32; color: #fff; }
@@ -368,6 +389,14 @@
     <h2>New Match</h2>
 
     <div class="setup-row">
+      <label>Format</label>
+      <select id="setupFormat" onchange="toggleSetupFormat()">
+        <option value="standard">Standard (sets)</option>
+        <option value="sprint">Sprint (first to N)</option>
+      </select>
+    </div>
+
+    <div class="setup-row">
       <label>Match type</label>
       <select id="setupMatchType" onchange="toggleMatchType()">
         <option value="singles">Singles</option>
@@ -395,22 +424,39 @@
 
     <hr class="setup-divider">
 
-    <div class="setup-row">
-      <label>Sets to win</label>
-      <select id="setupSets">
-        <option value="1">Best of 1</option>
-        <option value="2" selected>Best of 3</option>
-        <option value="3">Best of 5</option>
-      </select>
+    <!-- Standard-only options -->
+    <div id="standardOptions">
+      <div class="setup-row">
+        <label>Sets to win</label>
+        <select id="setupSets">
+          <option value="1">Best of 1</option>
+          <option value="2" selected>Best of 3</option>
+          <option value="3">Best of 5</option>
+        </select>
+      </div>
+
+      <div class="setup-row">
+        <label>Final set tiebreak</label>
+        <select id="setupTiebreak">
+          <option value="regular">Regular tiebreak (7 pts)</option>
+          <option value="super">Super tiebreak (10 pts)</option>
+          <option value="advantage">Advantage set</option>
+        </select>
+      </div>
     </div>
 
-    <div class="setup-row">
-      <label>Final set tiebreak</label>
-      <select id="setupTiebreak">
-        <option value="regular">Regular tiebreak (7 pts)</option>
-        <option value="super">Super tiebreak (10 pts)</option>
-        <option value="advantage">Advantage set</option>
-      </select>
+    <!-- Sprint-only options -->
+    <div id="sprintOptions" style="display:none">
+      <div class="setup-row">
+        <label>First to</label>
+        <select id="setupSprintTarget">
+          <option value="7">7 points</option>
+          <option value="10">10 points</option>
+          <option value="12" selected>12 points</option>
+          <option value="15">15 points</option>
+          <option value="21">21 points</option>
+        </select>
+      </div>
     </div>
 
     <div class="setup-row">
@@ -437,24 +483,26 @@
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
+  matchFormat: 'standard',   // 'standard' | 'sprint'
+  sprintTarget: 12,
   doubles: false,
-  names: ['Player 1', 'Player 2'],       // display names (combined for doubles)
-  doublesNames: null,                     // [[t0p0, t0p1], [t1p0, t1p1]]
+  names: ['Player 1', 'Player 2'],
+  doublesNames: null,         // [[t0p0, t0p1], [t1p0, t1p1]]
   setsToWin: 2,
   finalSetTiebreak: 'regular',
-  server: 0,                              // serving team index
-  serverPlayer: 0,                        // serving player within team (doubles)
-  serveQueue: null,                       // [{team,player}] x4 cycle (doubles)
+  server: 0,
+  serverPlayer: 0,
+  serveQueue: null,           // [{team,player}] x4 cycle (doubles)
   servePos: 0,
   sets: [],
   currentGames: [0, 0],
-  points: [0, 0],
+  points: [0, 0],             // game points (standard) or running score (sprint)
   inTiebreak: false,
   matchOver: false,
   history: [],
 };
 
-// ── Point display ──────────────────────────────────────────────────────────
+// ── Point display (standard mode) ──────────────────────────────────────────
 const POINT_NAMES = ['0', '15', '30', '40'];
 
 function playerPointDisplay(p) {
@@ -486,7 +534,9 @@ function awardPoint(player) {
   if (state.matchOver) return;
   snapshot();
   state.points[player]++;
-  if (state.inTiebreak) {
+  if (state.matchFormat === 'sprint') {
+    handleSprintPoint(player);
+  } else if (state.inTiebreak) {
     handleTiebreakPoint(player);
   } else {
     handleRegularPoint(player);
@@ -494,6 +544,19 @@ function awardPoint(player) {
   render();
 }
 
+// ── Sprint logic ────────────────────────────────────────────────────────────
+function handleSprintPoint(player) {
+  const total = state.points[0] + state.points[1];
+  // Rotate server every 2 points
+  if (total % 2 === 0) advanceServer();
+  // Win condition: reach target with 2-point lead
+  if (state.points[player] >= state.sprintTarget &&
+      state.points[player] - state.points[1 - player] >= 2) {
+    state.matchOver = true;
+  }
+}
+
+// ── Standard logic ──────────────────────────────────────────────────────────
 function handleRegularPoint(player) {
   const opp = 1 - player;
   const [p0, p1] = state.points;
@@ -509,14 +572,10 @@ function handleTiebreakPoint(player) {
   const opp = 1 - player;
   const target = isSuperTiebreak() ? 10 : 7;
   const pts = state.points;
-  if (pts[player] >= target && pts[player] - pts[opp] >= 2) {
-    winGame(player);
-  }
-  // Change serving team every 2 points (after the first)
+  if (pts[player] >= target && pts[player] - pts[opp] >= 2) winGame(player);
+  // Change serving team every 2 points (first server gets 1, then alternates 2)
   const total = pts[0] + pts[1];
-  if (total > 0 && total % 2 === 1) {
-    state.server = 1 - state.server;
-  }
+  if (total > 0 && total % 2 === 1) state.server = 1 - state.server;
 }
 
 function isSuperTiebreak() {
@@ -527,21 +586,15 @@ function isSuperTiebreak() {
 function winGame(player) {
   state.currentGames[player]++;
   const setDone = checkSetWon(player);
-
   if (setDone) {
     state.sets.push({ p: [...state.currentGames] });
     state.currentGames = [0, 0];
     const setsWon = [0, 1].map(i => state.sets.filter(s => s.p[i] > s.p[1 - i]).length);
     if (setsWon[player] >= state.setsToWin) state.matchOver = true;
   }
-
   state.points = [0, 0];
   state.inTiebreak = false;
-
-  if (!state.matchOver) {
-    advanceServer();
-    checkForTiebreak();
-  }
+  if (!state.matchOver) { advanceServer(); checkForTiebreak(); }
 }
 
 function advanceServer() {
@@ -560,14 +613,13 @@ function checkSetWon(player) {
   const gPlayer = state.currentGames[player];
   const gOpp    = state.currentGames[opp];
   const [g0, g1] = state.currentGames;
-
   if (g0 === 6 && g1 === 6) {
     if (isAdvantageSet()) return false;
     state.inTiebreak = true;
     return false;
   }
   if (gPlayer >= 6 && gPlayer - gOpp >= 2) return true;
-  if (gPlayer === 7) return true; // won tiebreak game
+  if (gPlayer === 7) return true;
   return false;
 }
 
@@ -588,16 +640,97 @@ function undoPoint() {
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────────
+function buildNameHtml(p, isServing) {
+  if (state.doubles && state.doublesNames) {
+    const [nameA, nameB] = state.doublesNames[p];
+    const sp = (isServing && !state.inTiebreak) ? state.serverPlayer : -1;
+    return `<div class="player-name">
+      <span class="serve-dot"></span>
+      <div class="name-block">
+        <div class="name-main${sp === 0 ? ' serving-player' : ''}">${escHtml(nameA)}</div>
+        <div class="name-partner${sp === 1 ? ' serving-player' : ''}">${escHtml(nameB)}</div>
+      </div>
+    </div>`;
+  }
+  return `<div class="player-name">
+    <span class="serve-dot"></span>
+    <div class="name-block">
+      <div class="name-main">${escHtml(state.names[p])}</div>
+    </div>
+  </div>`;
+}
+
 function render() {
+  const isSprint = state.matchFormat === 'sprint';
+  const board = document.getElementById('scoreboard');
+
+  if (isSprint) {
+    renderSprint(board);
+  } else {
+    renderStandard(board);
+  }
+
+  // Shared: buttons + undo
+  for (let p = 0; p < 2; p++) {
+    document.getElementById(`btn${p}`).disabled = state.matchOver;
+    document.getElementById(`btnLabel${p}`).textContent = state.doubles && state.doublesNames
+      ? `${state.doublesNames[p][0]} / ${state.doublesNames[p][1]}`
+      : state.names[p];
+  }
+  document.getElementById('undoBtn').disabled = state.history.length === 0;
+}
+
+function renderSprint(board) {
+  board.className = 'scoreboard sprint';
+  board.style.cssText = '';
+
+  document.getElementById('scoreHeader').innerHTML =
+    `<div>Player</div><div style="text-align:center;border-left:1px solid #2e5c2e">Score</div>`;
+
+  const maxPts = Math.max(...state.points);
+
+  for (let p = 0; p < 2; p++) {
+    const row = document.getElementById(`row${p}`);
+    const isServing = state.server === p && !state.matchOver;
+    row.className = 'score-row' + (isServing ? ' serving' : '');
+
+    const score = state.points[p];
+    const isWinner = state.matchOver && score > state.points[1 - p];
+    const isLeading = !state.matchOver && score > state.points[1 - p];
+    const scoreCls = isWinner ? 'sprint-score winning' : isLeading ? 'sprint-score leading' : 'sprint-score';
+
+    row.innerHTML = buildNameHtml(p, isServing) +
+      `<div class="${scoreCls}">${score}</div>`;
+  }
+
+  // Status
+  const statusEl = document.getElementById('status');
+  if (state.matchOver) {
+    statusEl.textContent = '';
+    const wi = state.points[0] > state.points[1] ? 0 : 1;
+    const winnerName = state.doubles && state.doublesNames
+      ? `${state.doublesNames[wi][0]} / ${state.doublesNames[wi][1]}`
+      : state.names[wi];
+    document.getElementById('winnerText').textContent = `${winnerName} wins!`;
+    document.getElementById('winOverlay').classList.add('show');
+  } else {
+    document.getElementById('winOverlay').classList.remove('show');
+    const serverName = state.doubles && state.doublesNames
+      ? state.doublesNames[state.server][state.serverPlayer]
+      : state.names[state.server];
+    statusEl.textContent = `First to ${state.sprintTarget} — ${serverName} to serve`;
+  }
+}
+
+function renderStandard(board) {
   const pastSets = state.sets.length;
-  document.getElementById('scoreboard').style.cssText = `--past-sets: ${pastSets}`;
+  board.className = 'scoreboard';
+  board.style.cssText = `--past-sets: ${pastSets}`;
 
   // Header
   const hdr = document.getElementById('scoreHeader');
   let hdrHtml = '<div>Player</div>';
-  for (let s = 0; s < pastSets; s++) {
-    hdrHtml += `<div style="text-align:center">S${s + 1}</div>`;
-  }
+  for (let s = 0; s < pastSets; s++) hdrHtml += `<div style="text-align:center">S${s + 1}</div>`;
   hdrHtml += `<div style="text-align:center">S${pastSets + 1}</div>`;
   hdrHtml += `<div style="text-align:center;border-left:1px solid #2e5c2e">Pts</div>`;
   hdr.innerHTML = hdrHtml;
@@ -608,48 +741,19 @@ function render() {
     const isServing = state.server === p && !state.matchOver;
     row.className = 'score-row' + (isServing ? ' serving' : '');
 
-    // Name cell
-    let nameHtml;
-    if (state.doubles && state.doublesNames) {
-      const [nameA, nameB] = state.doublesNames[p];
-      // Only highlight serving player when not in tiebreak (tiebreak tracks team only)
-      const sp = (isServing && !state.inTiebreak) ? state.serverPlayer : -1;
-      nameHtml = `<div class="player-name">
-        <span class="serve-dot"></span>
-        <div class="name-block">
-          <div class="name-main${sp === 0 ? ' serving-player' : ''}">${escHtml(nameA)}</div>
-          <div class="name-partner${sp === 1 ? ' serving-player' : ''}">${escHtml(nameB)}</div>
-        </div>
-      </div>`;
-    } else {
-      nameHtml = `<div class="player-name">
-        <span class="serve-dot"></span>
-        <div class="name-block">
-          <div class="name-main">${escHtml(state.names[p])}</div>
-        </div>
-      </div>`;
-    }
-
-    let rowHtml = nameHtml;
-
-    // Past set scores
+    let rowHtml = buildNameHtml(p, isServing);
     for (let s = 0; s < pastSets; s++) {
       const myG  = state.sets[s].p[p];
       const oppG = state.sets[s].p[1 - p];
       rowHtml += `<div class="set-score ${myG > oppG ? 'won' : 'lost'}">${myG}</div>`;
     }
-
-    // Current set games
     rowHtml += `<div class="game-score">${state.currentGames[p]}</div>`;
-
-    // Current game points — prominent
     const pts = playerPointDisplay(p);
     rowHtml += `<div class="point-score${pts === 'Ad' ? ' advantage' : ''}">${pts}</div>`;
-
     row.innerHTML = rowHtml;
   }
 
-  // Status bar
+  // Status
   const statusEl = document.getElementById('status');
   if (state.matchOver) {
     statusEl.textContent = '';
@@ -662,28 +766,14 @@ function render() {
     document.getElementById('winOverlay').classList.add('show');
   } else {
     document.getElementById('winOverlay').classList.remove('show');
-
     const serverName = state.doubles && state.doublesNames
       ? state.doublesNames[state.server][state.serverPlayer]
       : state.names[state.server];
-
     const [p0, p1] = state.points;
     const isDeuce = !state.inTiebreak && p0 >= 3 && p1 >= 3 && p0 === p1;
     const prefix = state.inTiebreak ? 'Tiebreak' : isDeuce ? 'Deuce' : '';
-
-    statusEl.textContent = prefix
-      ? `${prefix} — ${serverName} to serve`
-      : `${serverName} to serve`;
+    statusEl.textContent = prefix ? `${prefix} — ${serverName} to serve` : `${serverName} to serve`;
   }
-
-  // Buttons
-  for (let p = 0; p < 2; p++) {
-    document.getElementById(`btn${p}`).disabled = state.matchOver;
-    document.getElementById(`btnLabel${p}`).textContent = state.doubles && state.doublesNames
-      ? `${state.doublesNames[p][0]} / ${state.doublesNames[p][1]}`
-      : state.names[p];
-  }
-  document.getElementById('undoBtn').disabled = state.history.length === 0;
 }
 
 function escHtml(s) {
@@ -691,10 +781,16 @@ function escHtml(s) {
 }
 
 // ── Setup ──────────────────────────────────────────────────────────────────
+function toggleSetupFormat() {
+  const isSprint = document.getElementById('setupFormat').value === 'sprint';
+  document.getElementById('standardOptions').style.display = isSprint ? 'none' : 'block';
+  document.getElementById('sprintOptions').style.display   = isSprint ? 'block' : 'none';
+}
+
 function toggleMatchType() {
   const isDoubles = document.getElementById('setupMatchType').value === 'doubles';
-  document.getElementById('doublesName0').style.display        = isDoubles ? 'block' : 'none';
-  document.getElementById('doublesName1').style.display        = isDoubles ? 'block' : 'none';
+  document.getElementById('doublesName0').style.display           = isDoubles ? 'block' : 'none';
+  document.getElementById('doublesName1').style.display           = isDoubles ? 'block' : 'none';
   document.getElementById('doublesServerPlayerRow').style.display = isDoubles ? 'flex' : 'none';
   document.getElementById('teamLabel0').textContent = isDoubles ? 'Team 1' : 'Player 1';
   document.getElementById('teamLabel1').textContent = isDoubles ? 'Team 2' : 'Player 2';
@@ -704,6 +800,7 @@ function toggleMatchType() {
 
 function openSetup() {
   const isDoubles = state.doubles;
+  document.getElementById('setupFormat').value    = state.matchFormat;
   document.getElementById('setupMatchType').value = isDoubles ? 'doubles' : 'singles';
 
   if (isDoubles && state.doublesNames) {
@@ -716,9 +813,9 @@ function openSetup() {
     document.getElementById('setupName1').value = state.names[1];
   }
 
+  toggleSetupFormat();
   toggleMatchType();
 
-  // Rebuild first-server options using current names
   const n0 = isDoubles && state.doublesNames ? state.doublesNames[0][0] : state.names[0];
   const n1 = isDoubles && state.doublesNames ? state.doublesNames[1][0] : state.names[1];
   document.getElementById('setupServer').innerHTML =
@@ -730,13 +827,13 @@ function openSetup() {
 }
 
 function startMatch() {
-  const isDoubles = document.getElementById('setupMatchType').value === 'doubles';
+  const matchFormat = document.getElementById('setupFormat').value;
+  const isDoubles   = document.getElementById('setupMatchType').value === 'doubles';
   const n0 = document.getElementById('setupName0').value.trim() || 'Player 1';
   const n1 = document.getElementById('setupName1').value.trim() || 'Player 2';
 
   let doublesNames = null;
   let names = [n0, n1];
-
   if (isDoubles) {
     const n0b = document.getElementById('setupName0b').value.trim() || 'Player 1B';
     const n1b = document.getElementById('setupName1b').value.trim() || 'Player 2B';
@@ -746,42 +843,30 @@ function startMatch() {
 
   const setsToWin        = parseInt(document.getElementById('setupSets').value);
   const finalSetTiebreak = document.getElementById('setupTiebreak').value;
+  const sprintTarget     = parseInt(document.getElementById('setupSprintTarget').value);
   const serverVal        = document.getElementById('setupServer').value;
   const serverTeam       = serverVal === 'random' ? (Math.random() < 0.5 ? 0 : 1) : parseInt(serverVal);
 
-  let serveQueue   = null;
-  let serverPlayer = 0;
-  let servePos     = 0;
-
+  let serveQueue = null, serverPlayer = 0, servePos = 0;
   if (isDoubles) {
-    const firstServerPlayer = parseInt(document.getElementById('setupServerPlayer').value);
-    const receivingTeam     = 1 - serverTeam;
-    // Standard doubles serve order: A1, B1, A2, B2 (receiving team defaults to player 0 first)
+    const fsp = parseInt(document.getElementById('setupServerPlayer').value);
+    const rt  = 1 - serverTeam;
     serveQueue = [
-      { team: serverTeam,   player: firstServerPlayer },
-      { team: receivingTeam, player: 0 },
-      { team: serverTeam,   player: 1 - firstServerPlayer },
-      { team: receivingTeam, player: 1 },
+      { team: serverTeam, player: fsp },
+      { team: rt,         player: 0 },
+      { team: serverTeam, player: 1 - fsp },
+      { team: rt,         player: 1 },
     ];
-    serverPlayer = firstServerPlayer;
+    serverPlayer = fsp;
   }
 
   Object.assign(state, {
-    doubles: isDoubles,
-    names,
-    doublesNames,
-    setsToWin,
-    finalSetTiebreak,
-    server: serverTeam,
-    serverPlayer,
-    serveQueue,
-    servePos,
-    sets: [],
-    currentGames: [0, 0],
-    points: [0, 0],
-    inTiebreak: false,
-    matchOver: false,
-    history: [],
+    matchFormat, sprintTarget,
+    doubles: isDoubles, names, doublesNames,
+    setsToWin, finalSetTiebreak,
+    server: serverTeam, serverPlayer, serveQueue, servePos,
+    sets: [], currentGames: [0, 0], points: [0, 0],
+    inTiebreak: false, matchOver: false, history: [],
   });
 
   document.getElementById('setupOverlay').style.display = 'none';
