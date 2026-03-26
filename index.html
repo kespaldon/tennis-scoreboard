@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tennis Scoreboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #1a3a1a;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    h1 {
+      font-size: 1.1rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #a8d5a2;
+      margin-bottom: 24px;
+      font-weight: 400;
+    }
+
+    /* ── Scoreboard ─────────────────────────────── */
+    .scoreboard {
+      background: #0e250e;
+      border: 1px solid #2e5c2e;
+      border-radius: 12px;
+      overflow: hidden;
+      width: 100%;
+      max-width: 700px;
+      margin-bottom: 24px;
+    }
+
+    .score-header {
+      display: grid;
+      grid-template-columns: 1fr repeat(var(--past-sets), 52px) 52px 96px;
+      background: #0b1d0b;
+      padding: 8px 12px;
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #6a9b6a;
+    }
+
+    .score-row {
+      display: grid;
+      grid-template-columns: 1fr repeat(var(--past-sets), 52px) 52px 96px;
+      align-items: center;
+      padding: 12px 12px;
+      border-top: 1px solid #1c3a1c;
+      transition: background 0.15s;
+      min-height: 64px;
+    }
+
+    .score-row.serving { background: #122412; }
+
+    .player-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .serve-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #c8e6c9;
+      flex-shrink: 0;
+      visibility: hidden;
+    }
+    .serving .serve-dot { visibility: visible; }
+
+    .name-block { min-width: 0; }
+
+    .name-main {
+      font-size: 1.1rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .name-partner {
+      font-size: 0.85rem;
+      color: #a8d5a2;
+      font-weight: 400;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .serving-player { color: #fff176 !important; font-weight: 700 !important; }
+
+    .set-score {
+      text-align: center;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #c8e6c9;
+    }
+
+    .set-score.won  { color: #fff; }
+    .set-score.lost { color: #4a7a4a; }
+
+    .game-score {
+      text-align: center;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #c8e6c9;
+    }
+
+    /* ── Prominent game-point score ─────────────── */
+    .point-score {
+      text-align: center;
+      font-size: 2.4rem;
+      font-weight: 900;
+      color: #fff9c4;
+      letter-spacing: -0.02em;
+      border-left: 1px solid #2e5c2e;
+    }
+
+    .point-score.advantage { color: #69f0ae; }
+
+    /* ── Status bar ─────────────────────────────── */
+    .status {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #a8d5a2;
+      min-height: 1.4em;
+      margin-bottom: 20px;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Point buttons ──────────────────────────── */
+    .controls {
+      display: flex;
+      gap: 16px;
+      width: 100%;
+      max-width: 700px;
+      margin-bottom: 16px;
+    }
+
+    .point-btn {
+      flex: 1;
+      padding: 20px 12px;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: filter 0.1s, transform 0.08s;
+      line-height: 1.4;
+    }
+
+    .point-btn:active  { transform: scale(0.97); filter: brightness(0.9); }
+    .point-btn:disabled { opacity: 0.35; cursor: default; }
+
+    .point-btn.p1 { background: #2e7d32; color: #fff; }
+    .point-btn.p2 { background: #1565c0; color: #fff; }
+
+    /* ── Utility buttons ────────────────────────── */
+    .util-row {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      max-width: 700px;
+    }
+
+    .util-btn {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #2e5c2e;
+      border-radius: 8px;
+      background: transparent;
+      color: #a8d5a2;
+      font-size: 0.8rem;
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: background 0.15s;
+    }
+
+    .util-btn:hover    { background: #1c3a1c; }
+    .util-btn:disabled { opacity: 0.3; cursor: default; }
+
+    /* ── Match-over overlay ─────────────────────── */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .overlay.show { display: flex; }
+
+    .overlay-box {
+      background: #0e250e;
+      border: 2px solid #4caf50;
+      border-radius: 16px;
+      padding: 40px 48px;
+      text-align: center;
+    }
+
+    .overlay-box h2 { font-size: 1rem; color: #a8d5a2; margin-bottom: 8px; letter-spacing: 0.1em; text-transform: uppercase; }
+    .overlay-box p  { font-size: 2rem; font-weight: 800; margin-bottom: 28px; }
+
+    .new-match-btn {
+      padding: 14px 32px;
+      background: #2e7d32;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* ── Setup modal ────────────────────────────── */
+    .setup-overlay {
+      display: flex;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+    }
+
+    .setup-box {
+      background: #0e250e;
+      border: 2px solid #2e5c2e;
+      border-radius: 16px;
+      padding: 36px 40px;
+      width: 100%;
+      max-width: 440px;
+      max-height: 92vh;
+      overflow-y: auto;
+    }
+
+    .setup-box h2 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: #c8e6c9;
+    }
+
+    .setup-box label {
+      display: block;
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #6a9b6a;
+      margin-bottom: 4px;
+    }
+
+    .setup-box input[type=text] {
+      width: 100%;
+      background: #122412;
+      border: 1px solid #2e5c2e;
+      border-radius: 6px;
+      color: #fff;
+      padding: 10px 12px;
+      font-size: 1rem;
+      margin-bottom: 14px;
+      outline: none;
+    }
+
+    .setup-box input[type=text]:focus { border-color: #4caf50; }
+
+    .setup-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 14px;
+      align-items: center;
+    }
+
+    .setup-row label { margin-bottom: 0; flex-shrink: 0; }
+
+    .setup-box select {
+      background: #122412;
+      border: 1px solid #2e5c2e;
+      border-radius: 6px;
+      color: #fff;
+      padding: 8px 10px;
+      font-size: 0.95rem;
+      outline: none;
+    }
+
+    .setup-divider {
+      border: none;
+      border-top: 1px solid #1c3a1c;
+      margin: 4px 0 16px;
+    }
+
+    .setup-section-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #4a7a4a;
+      margin-bottom: 10px;
+    }
+
+    .start-btn {
+      width: 100%;
+      padding: 14px;
+      background: #2e7d32;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Tennis Scoreboard</h1>
+
+<div class="scoreboard" id="scoreboard">
+  <div class="score-header" id="scoreHeader">
+    <div>Player</div>
+  </div>
+  <div class="score-row" id="row0"></div>
+  <div class="score-row" id="row1"></div>
+</div>
+
+<div class="status" id="status"></div>
+
+<div class="controls">
+  <button class="point-btn p1" id="btn0" onclick="awardPoint(0)">
+    <span id="btnLabel0">Player 1</span><br>Point
+  </button>
+  <button class="point-btn p2" id="btn1" onclick="awardPoint(1)">
+    <span id="btnLabel1">Player 2</span><br>Point
+  </button>
+</div>
+
+<div class="util-row">
+  <button class="util-btn" id="undoBtn" onclick="undoPoint()" disabled>↩ Undo</button>
+  <button class="util-btn" onclick="openSetup()">New Match</button>
+</div>
+
+<!-- Match-over overlay -->
+<div class="overlay" id="winOverlay">
+  <div class="overlay-box">
+    <h2>Match Over</h2>
+    <p id="winnerText"></p>
+    <button class="new-match-btn" onclick="openSetup()">New Match</button>
+  </div>
+</div>
+
+<!-- Setup modal -->
+<div class="setup-overlay" id="setupOverlay">
+  <div class="setup-box">
+    <h2>New Match</h2>
+
+    <div class="setup-row">
+      <label>Match type</label>
+      <select id="setupMatchType" onchange="toggleMatchType()">
+        <option value="singles">Singles</option>
+        <option value="doubles">Doubles</option>
+      </select>
+    </div>
+
+    <hr class="setup-divider">
+
+    <p class="setup-section-label" id="teamLabel0">Player 1</p>
+    <label id="labelName0">Name</label>
+    <input type="text" id="setupName0" value="Player 1" maxlength="20" />
+    <div id="doublesName0" style="display:none">
+      <label>Partner name</label>
+      <input type="text" id="setupName0b" value="Player 1B" maxlength="20" />
+    </div>
+
+    <p class="setup-section-label" id="teamLabel1">Player 2</p>
+    <label id="labelName1">Name</label>
+    <input type="text" id="setupName1" value="Player 2" maxlength="20" />
+    <div id="doublesName1" style="display:none">
+      <label>Partner name</label>
+      <input type="text" id="setupName1b" value="Player 2B" maxlength="20" />
+    </div>
+
+    <hr class="setup-divider">
+
+    <div class="setup-row">
+      <label>Sets to win</label>
+      <select id="setupSets">
+        <option value="1">Best of 1</option>
+        <option value="2" selected>Best of 3</option>
+        <option value="3">Best of 5</option>
+      </select>
+    </div>
+
+    <div class="setup-row">
+      <label>Final set tiebreak</label>
+      <select id="setupTiebreak">
+        <option value="regular">Regular tiebreak (7 pts)</option>
+        <option value="super">Super tiebreak (10 pts)</option>
+        <option value="advantage">Advantage set</option>
+      </select>
+    </div>
+
+    <div class="setup-row">
+      <label>First server</label>
+      <select id="setupServer">
+        <option value="0">Player 1</option>
+        <option value="1">Player 2</option>
+        <option value="random">Random</option>
+      </select>
+    </div>
+
+    <div class="setup-row" id="doublesServerPlayerRow" style="display:none">
+      <label>Serving player</label>
+      <select id="setupServerPlayer">
+        <option value="0">Player 1</option>
+        <option value="1">Player 2</option>
+      </select>
+    </div>
+
+    <button class="start-btn" onclick="startMatch()">Start Match</button>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const state = {
+  doubles: false,
+  names: ['Player 1', 'Player 2'],       // display names (combined for doubles)
+  doublesNames: null,                     // [[t0p0, t0p1], [t1p0, t1p1]]
+  setsToWin: 2,
+  finalSetTiebreak: 'regular',
+  server: 0,                              // serving team index
+  serverPlayer: 0,                        // serving player within team (doubles)
+  serveQueue: null,                       // [{team,player}] x4 cycle (doubles)
+  servePos: 0,
+  sets: [],
+  currentGames: [0, 0],
+  points: [0, 0],
+  inTiebreak: false,
+  matchOver: false,
+  history: [],
+};
+
+// ── Point display ──────────────────────────────────────────────────────────
+const POINT_NAMES = ['0', '15', '30', '40'];
+
+function playerPointDisplay(p) {
+  if (state.inTiebreak) return String(state.points[p]);
+  const [p0, p1] = state.points;
+  const isDeuce = p0 >= 3 && p1 >= 3;
+  if (isDeuce) {
+    if (p0 === p1) return '40';
+    return state.points[p] > state.points[1 - p] ? 'Ad' : '40';
+  }
+  return POINT_NAMES[Math.min(state.points[p], 3)];
+}
+
+// ── Match logic ────────────────────────────────────────────────────────────
+function snapshot() {
+  state.history.push(JSON.parse(JSON.stringify({
+    server: state.server,
+    serverPlayer: state.serverPlayer,
+    servePos: state.servePos,
+    sets: state.sets,
+    currentGames: state.currentGames,
+    points: state.points,
+    inTiebreak: state.inTiebreak,
+    matchOver: state.matchOver,
+  })));
+}
+
+function awardPoint(player) {
+  if (state.matchOver) return;
+  snapshot();
+  state.points[player]++;
+  if (state.inTiebreak) {
+    handleTiebreakPoint(player);
+  } else {
+    handleRegularPoint(player);
+  }
+  render();
+}
+
+function handleRegularPoint(player) {
+  const opp = 1 - player;
+  const [p0, p1] = state.points;
+  const isDeuce = p0 >= 3 && p1 >= 3;
+  if (isDeuce) {
+    if (state.points[player] - state.points[opp] >= 2) winGame(player);
+  } else {
+    if (state.points[player] >= 4) winGame(player);
+  }
+}
+
+function handleTiebreakPoint(player) {
+  const opp = 1 - player;
+  const target = isSuperTiebreak() ? 10 : 7;
+  const pts = state.points;
+  if (pts[player] >= target && pts[player] - pts[opp] >= 2) {
+    winGame(player);
+  }
+  // Change serving team every 2 points (after the first)
+  const total = pts[0] + pts[1];
+  if (total > 0 && total % 2 === 1) {
+    state.server = 1 - state.server;
+  }
+}
+
+function isSuperTiebreak() {
+  return state.sets.length === (state.setsToWin * 2 - 1) - 1 &&
+         state.finalSetTiebreak === 'super';
+}
+
+function winGame(player) {
+  state.currentGames[player]++;
+  const setDone = checkSetWon(player);
+
+  if (setDone) {
+    state.sets.push({ p: [...state.currentGames] });
+    state.currentGames = [0, 0];
+    const setsWon = [0, 1].map(i => state.sets.filter(s => s.p[i] > s.p[1 - i]).length);
+    if (setsWon[player] >= state.setsToWin) state.matchOver = true;
+  }
+
+  state.points = [0, 0];
+  state.inTiebreak = false;
+
+  if (!state.matchOver) {
+    advanceServer();
+    checkForTiebreak();
+  }
+}
+
+function advanceServer() {
+  if (state.doubles && state.serveQueue) {
+    state.servePos++;
+    const curr = state.serveQueue[state.servePos % 4];
+    state.server = curr.team;
+    state.serverPlayer = curr.player;
+  } else {
+    state.server = 1 - state.server;
+  }
+}
+
+function checkSetWon(player) {
+  const opp = 1 - player;
+  const gPlayer = state.currentGames[player];
+  const gOpp    = state.currentGames[opp];
+  const [g0, g1] = state.currentGames;
+
+  if (g0 === 6 && g1 === 6) {
+    if (isAdvantageSet()) return false;
+    state.inTiebreak = true;
+    return false;
+  }
+  if (gPlayer >= 6 && gPlayer - gOpp >= 2) return true;
+  if (gPlayer === 7) return true; // won tiebreak game
+  return false;
+}
+
+function isAdvantageSet() {
+  const finalSetIndex = state.setsToWin * 2 - 2;
+  return state.sets.length === finalSetIndex && state.finalSetTiebreak === 'advantage';
+}
+
+function checkForTiebreak() {
+  const [g0, g1] = state.currentGames;
+  if (g0 === 6 && g1 === 6 && !isAdvantageSet()) state.inTiebreak = true;
+}
+
+function undoPoint() {
+  if (!state.history.length) return;
+  Object.assign(state, state.history.pop());
+  render();
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────────
+function render() {
+  const pastSets = state.sets.length;
+  document.getElementById('scoreboard').style.cssText = `--past-sets: ${pastSets}`;
+
+  // Header
+  const hdr = document.getElementById('scoreHeader');
+  let hdrHtml = '<div>Player</div>';
+  for (let s = 0; s < pastSets; s++) {
+    hdrHtml += `<div style="text-align:center">S${s + 1}</div>`;
+  }
+  hdrHtml += `<div style="text-align:center">S${pastSets + 1}</div>`;
+  hdrHtml += `<div style="text-align:center;border-left:1px solid #2e5c2e">Pts</div>`;
+  hdr.innerHTML = hdrHtml;
+
+  // Rows
+  for (let p = 0; p < 2; p++) {
+    const row = document.getElementById(`row${p}`);
+    const isServing = state.server === p && !state.matchOver;
+    row.className = 'score-row' + (isServing ? ' serving' : '');
+
+    // Name cell
+    let nameHtml;
+    if (state.doubles && state.doublesNames) {
+      const [nameA, nameB] = state.doublesNames[p];
+      // Only highlight serving player when not in tiebreak (tiebreak tracks team only)
+      const sp = (isServing && !state.inTiebreak) ? state.serverPlayer : -1;
+      nameHtml = `<div class="player-name">
+        <span class="serve-dot"></span>
+        <div class="name-block">
+          <div class="name-main${sp === 0 ? ' serving-player' : ''}">${escHtml(nameA)}</div>
+          <div class="name-partner${sp === 1 ? ' serving-player' : ''}">${escHtml(nameB)}</div>
+        </div>
+      </div>`;
+    } else {
+      nameHtml = `<div class="player-name">
+        <span class="serve-dot"></span>
+        <div class="name-block">
+          <div class="name-main">${escHtml(state.names[p])}</div>
+        </div>
+      </div>`;
+    }
+
+    let rowHtml = nameHtml;
+
+    // Past set scores
+    for (let s = 0; s < pastSets; s++) {
+      const myG  = state.sets[s].p[p];
+      const oppG = state.sets[s].p[1 - p];
+      rowHtml += `<div class="set-score ${myG > oppG ? 'won' : 'lost'}">${myG}</div>`;
+    }
+
+    // Current set games
+    rowHtml += `<div class="game-score">${state.currentGames[p]}</div>`;
+
+    // Current game points — prominent
+    const pts = playerPointDisplay(p);
+    rowHtml += `<div class="point-score${pts === 'Ad' ? ' advantage' : ''}">${pts}</div>`;
+
+    row.innerHTML = rowHtml;
+  }
+
+  // Status bar
+  const statusEl = document.getElementById('status');
+  if (state.matchOver) {
+    statusEl.textContent = '';
+    const setsWon = [0, 1].map(i => state.sets.filter(s => s.p[i] > s.p[1 - i]).length);
+    const wi = setsWon[0] >= state.setsToWin ? 0 : 1;
+    const winnerName = state.doubles && state.doublesNames
+      ? `${state.doublesNames[wi][0]} / ${state.doublesNames[wi][1]}`
+      : state.names[wi];
+    document.getElementById('winnerText').textContent = `${winnerName} wins!`;
+    document.getElementById('winOverlay').classList.add('show');
+  } else {
+    document.getElementById('winOverlay').classList.remove('show');
+
+    const serverName = state.doubles && state.doublesNames
+      ? state.doublesNames[state.server][state.serverPlayer]
+      : state.names[state.server];
+
+    const [p0, p1] = state.points;
+    const isDeuce = !state.inTiebreak && p0 >= 3 && p1 >= 3 && p0 === p1;
+    const prefix = state.inTiebreak ? 'Tiebreak' : isDeuce ? 'Deuce' : '';
+
+    statusEl.textContent = prefix
+      ? `${prefix} — ${serverName} to serve`
+      : `${serverName} to serve`;
+  }
+
+  // Buttons
+  for (let p = 0; p < 2; p++) {
+    document.getElementById(`btn${p}`).disabled = state.matchOver;
+    document.getElementById(`btnLabel${p}`).textContent = state.doubles && state.doublesNames
+      ? `${state.doublesNames[p][0]} / ${state.doublesNames[p][1]}`
+      : state.names[p];
+  }
+  document.getElementById('undoBtn').disabled = state.history.length === 0;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Setup ──────────────────────────────────────────────────────────────────
+function toggleMatchType() {
+  const isDoubles = document.getElementById('setupMatchType').value === 'doubles';
+  document.getElementById('doublesName0').style.display        = isDoubles ? 'block' : 'none';
+  document.getElementById('doublesName1').style.display        = isDoubles ? 'block' : 'none';
+  document.getElementById('doublesServerPlayerRow').style.display = isDoubles ? 'flex' : 'none';
+  document.getElementById('teamLabel0').textContent = isDoubles ? 'Team 1' : 'Player 1';
+  document.getElementById('teamLabel1').textContent = isDoubles ? 'Team 2' : 'Player 2';
+  document.getElementById('labelName0').textContent = isDoubles ? 'Player 1 name' : 'Name';
+  document.getElementById('labelName1').textContent = isDoubles ? 'Player 1 name' : 'Name';
+}
+
+function openSetup() {
+  const isDoubles = state.doubles;
+  document.getElementById('setupMatchType').value = isDoubles ? 'doubles' : 'singles';
+
+  if (isDoubles && state.doublesNames) {
+    document.getElementById('setupName0').value  = state.doublesNames[0][0];
+    document.getElementById('setupName0b').value = state.doublesNames[0][1];
+    document.getElementById('setupName1').value  = state.doublesNames[1][0];
+    document.getElementById('setupName1b').value = state.doublesNames[1][1];
+  } else {
+    document.getElementById('setupName0').value = state.names[0];
+    document.getElementById('setupName1').value = state.names[1];
+  }
+
+  toggleMatchType();
+
+  // Rebuild first-server options using current names
+  const n0 = isDoubles && state.doublesNames ? state.doublesNames[0][0] : state.names[0];
+  const n1 = isDoubles && state.doublesNames ? state.doublesNames[1][0] : state.names[1];
+  document.getElementById('setupServer').innerHTML =
+    `<option value="0">${escHtml(n0)}</option>
+     <option value="1">${escHtml(n1)}</option>
+     <option value="random">Random</option>`;
+
+  document.getElementById('setupOverlay').style.display = 'flex';
+}
+
+function startMatch() {
+  const isDoubles = document.getElementById('setupMatchType').value === 'doubles';
+  const n0 = document.getElementById('setupName0').value.trim() || 'Player 1';
+  const n1 = document.getElementById('setupName1').value.trim() || 'Player 2';
+
+  let doublesNames = null;
+  let names = [n0, n1];
+
+  if (isDoubles) {
+    const n0b = document.getElementById('setupName0b').value.trim() || 'Player 1B';
+    const n1b = document.getElementById('setupName1b').value.trim() || 'Player 2B';
+    doublesNames = [[n0, n0b], [n1, n1b]];
+    names = [`${n0} / ${n0b}`, `${n1} / ${n1b}`];
+  }
+
+  const setsToWin        = parseInt(document.getElementById('setupSets').value);
+  const finalSetTiebreak = document.getElementById('setupTiebreak').value;
+  const serverVal        = document.getElementById('setupServer').value;
+  const serverTeam       = serverVal === 'random' ? (Math.random() < 0.5 ? 0 : 1) : parseInt(serverVal);
+
+  let serveQueue   = null;
+  let serverPlayer = 0;
+  let servePos     = 0;
+
+  if (isDoubles) {
+    const firstServerPlayer = parseInt(document.getElementById('setupServerPlayer').value);
+    const receivingTeam     = 1 - serverTeam;
+    // Standard doubles serve order: A1, B1, A2, B2 (receiving team defaults to player 0 first)
+    serveQueue = [
+      { team: serverTeam,   player: firstServerPlayer },
+      { team: receivingTeam, player: 0 },
+      { team: serverTeam,   player: 1 - firstServerPlayer },
+      { team: receivingTeam, player: 1 },
+    ];
+    serverPlayer = firstServerPlayer;
+  }
+
+  Object.assign(state, {
+    doubles: isDoubles,
+    names,
+    doublesNames,
+    setsToWin,
+    finalSetTiebreak,
+    server: serverTeam,
+    serverPlayer,
+    serveQueue,
+    servePos,
+    sets: [],
+    currentGames: [0, 0],
+    points: [0, 0],
+    inTiebreak: false,
+    matchOver: false,
+    history: [],
+  });
+
+  document.getElementById('setupOverlay').style.display = 'none';
+  render();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  document.getElementById('setupOverlay').style.display = 'flex';
+});
+</script>
+</body>
+</html>
